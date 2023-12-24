@@ -12,12 +12,54 @@ namespace fs = std::filesystem;
 static bool wdt_create_pipe([[maybe_unused]] int fd[2])
 {
     // @TODO - создать pipe
+    if (pipe(fd) < 0)
+    {
+        std::cerr << "Failed to create pipe" << std::endl;
+        return EXIT_FAILURE;
+    }
+    const pid_t pid = fork();
+
+    if (pid == -1)
+    {
+        std::cerr << "error when forked, errno: " << errno << std::endl;
+        return EXIT_FAILURE;
+    }
+
+    if (pid == 0)
+    {
+        const std::string str = "Hello, world!";
+        std::cout << "I'm a child process" << std::endl;
+        write(fd[1], str.c_str(), str.size());
+        std::cout << "Write, str = " << str << std::endl;
+    }
+    else if (waitpid(pid, nullptr, 0))
+    {
+        char buf[64];
+        std::cout << "I'm a parent process" << std::endl;
+        if (read(fd[0], buf, sizeof(buf)) > 0)
+        {
+            std::cout << "Read, buf = " << buf << std::endl;
+        }
+    }
+    close(fd[0]);
+    close(fd[1]);
     return true;
 }
 
 static pid_t run_program([[maybe_unused]] fs::path path, [[maybe_unused]] const std::vector<std::string>& args)
 {
     // @TODO - написать запуск программы
+    
+    std::vector<const char*> argv;
+    argv.push_back(path.c_str());
+    for (const std::string& arg : args)
+    {
+            argv.push_back(arg.c_str());
+    }
+        argv.push_back(NULL);
+
+    pid_t pid = system(command.c_str());
+
     return -1;
 }
 
@@ -88,7 +130,18 @@ bool IBaseInterface::PreparePrograms()
     for ([[maybe_unused]] auto& it : predefined_progs)
     {
         // @TODO - добавить инициализацию программ в m_progs, в том числе аргумент командной строки
-        // здесь по сути просто переложить из одной структуры в другую
+        std::string program_name = it.first;
+        std::string program_argument = it.second;
+
+        // Добавляем аргумент командной строки в программу
+        if (argc > 1) {
+            program_argument += " " + std::string(argv[1]);
+        }
+
+        // Инициализируем программу и добавляем ее в m_progs
+        Program program(program_name, program_argument);
+        m_progs.push_back(program);
+
     }
 
     return true;
@@ -97,6 +150,16 @@ bool IBaseInterface::PreparePrograms()
 bool IBaseInterface::TerminateProgram([[maybe_unused]] const pid_t pid) const
 {
     // @TODO - написать терминирование процесса по заданному pid
+     // Попробуем сначала отправить SIGTERM сигнал
+    if (kill(pid, SIGTERM) == 0) {
+        return true;
+    }
+    // Если отправка SIGTERM не удалась, пробуем отправить SIGKILL сигнал
+    if (kill(pid, SIGKILL) == 0) {
+        return true;
+    }
+    // Если и отправка SIGKILL не удалась, значит процесс уже завершен или не существует
+   
     return false;
 }
 
@@ -121,6 +184,7 @@ pid_t IBaseInterface::FindTerminatedTask() const
 bool IBaseInterface::GetRequestTask([[maybe_unused]] pid_t& pid) const
 {
     // @TODO - считать пид процесса, который пинговал из пайпа
+    pid = getpid();
     return true;
 }
 
@@ -138,12 +202,39 @@ bool IBaseInterface::WaitExitAllPrograms() const
 bool IBaseInterface::ToDaemon() const
 {
     // @TODO - демонизировать процесс мониторинга
+    pid_t pid = fork();
+
+    if (pid < 0) {
+        // Ошибка при создании процесса
+        std::cerr << "Ошибка при создании процесса" << std::endl;
+        return false;
+    }
+
+    if (pid > 0) {
+        // Завершаем родительский процесс
+        exit(EXIT_SUCCESS);
+    }
+
+    // Дочерний процесс
+
+    // Создаем новый SID для дочернего процесса
+    if (setsid() < 0) {
+        // Ошибка при создании нового SID
+        std::cerr << "Ошибка при создании нового SID" << std::endl;
+        return false;
+    }
+    // Закрываем стандартные потоки ввода/вывода/ошибок
+    close(STDIN_FILENO);
+    close(STDOUT_FILENO);
+    close(STDERR_FILENO);
     return true;
 }
 
 void IBaseInterface::Destroy()
 {
     // @TODO - закрыть файловые дескрипторы пайпа
+    close(m_pipeRead);
+    close(m_pipeWrite);
     m_init = false;
 }
 
