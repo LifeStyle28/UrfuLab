@@ -61,6 +61,7 @@ template <typename TInterface>
 bool Monitor<TInterface>::Init()
 {
     // @TODO - создаем pipe для приема заявок на наблюдение
+     
     // запускаем все необходимые процессы
     if (!StartAllPrograms())
     {
@@ -142,6 +143,23 @@ template <typename TInterface>
 pid_t Monitor<TInterface>::StartProgram(t_prog& prog) const
 {
     // @TODO - написать запуск программы
+    pid_t pid = fork();
+    if (pid == -1) {
+        // Ошибка при вызове fork()
+        perror("Ошибка при вызове fork()");
+        exit(EXIT_FAILURE);
+    }
+    else if (pid == 0) {
+        // Код, выполняемый дочерним процессом
+        execvp(prog.path, prog.args);
+        // Если execvp() вернулся, значит произошла ошибка
+        perror("Ошибка при запуске программы");
+        exit(EXIT_FAILURE);
+    }
+    else {
+        // Код, выполняемый родительским процессом
+        return pid;
+    }
     return 0;
 }
 
