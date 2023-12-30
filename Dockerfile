@@ -5,7 +5,7 @@ RUN apt update && \
     apt install -y \
       python3-pip \
       cmake \
-      qtbase5-dev \    # для сервера и клиента
+      qtbase5-dev \
     && \
     pip3 install conan==1.59.0
 
@@ -30,7 +30,7 @@ FROM ubuntu:22.04 as run
 
 RUN apt update && \
     apt install -y \
-      libqt5network5   # для сервера и клиента
+      libqt5network5
 
 # Создадим пользователя admin (нужен root для создания файла лога, поэтому закоментил)
 #RUN groupadd -r admin && useradd -mrg admin admin
