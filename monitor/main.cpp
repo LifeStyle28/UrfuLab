@@ -1,7 +1,7 @@
 #include "monitor.h"
 #include "base_interface.h"
-
 #include <signal.h>
+
 
 using namespace monitor;
 using namespace boost_logger;
@@ -16,8 +16,25 @@ static const int SIG_WDT_UNREG = SIGRTMIN + 2;
 
 static void wdthandler(int signo, siginfo_t *info, [[maybe_unused]] void *ptr)
 {
-    pid_t pid = (signo == SIG_WDT_UNREG) ? -info->si_pid : info->si_pid;
-    t_monitor::send_request(pid);
+    pid_t pid;
+    if (signo == SIG_WDT_REG)
+    {
+        pid = info->si_pid;
+        t_monitor::send_request(pid);
+    }
+    else if (signo == SIG_WDT_UNREG)
+    {
+        pid = -info->si_pid;
+        t_monitor::send_request(pid);
+    }
+    else if (signo == SIGTERM)
+    {
+        t_monitor::m_isTerminate = true;
+    }
+    else
+    {
+
+    }
 }
 
 static void init_wdt()
@@ -28,8 +45,10 @@ static void init_wdt()
     sigemptyset(&wdtact.sa_mask);
     sigaddset(&wdtact.sa_mask, SIG_WDT_REG);
     sigaddset(&wdtact.sa_mask, SIG_WDT_UNREG);
+    sigaddset(&wdtact.sa_mask, SIGTERM);
     sigaction(SIG_WDT_REG, &wdtact, NULL);
     sigaction(SIG_WDT_UNREG, &wdtact, NULL);
+    sigaction(SIGTERM, &wdtact, NULL);
 }
 
 int main()
@@ -45,7 +64,23 @@ int main()
         json::value customData{{}};
         BOOST_LOG_TRIVIAL(info) << logging::add_value(additional_data, customData)
                                 << "Monitor has started"sv;
+
         // @TODO - произвести инициализацию и запустить мониторинг
+        if (!monitor.Init())
+		{
+            boost::json::value custom_data{{}};
+            BOOST_LOG_TRIVIAL(error)
+                                    << boost::log::add_value(boost_logger::additional_data, custom_data)
+                                    << "failed to init monitor!";
+			return EXIT_FAILURE;
+		}
+        if (!monitor.Exec())
+        {
+            boost::json::value custom_data{};
+            BOOST_LOG_TRIVIAL(error) << boost::log::add_value(boost_logger::additional_data, custom_data)
+                                     << "Error in Exec!";
+            return EXIT_FAILURE;
+        }
     }
     catch (const std::exception& e)
     {

@@ -5,8 +5,13 @@
 #include <vector>
 #include <filesystem>
 #include <chrono>
-
+#include <spawn.h>
+#include <iostream>
+#include <sys/wait.h>
+#include <sys/stat.h>
 #include <boost/signals2.hpp>
+#include <csignal>
+
 
 namespace monitor
 {
@@ -16,6 +21,7 @@ class IBaseInterface
 public:
     boost::signals2::signal<void ()> OnCreateWdtPipe; ///< сигнал создания канала wdt
     static void send_request(const pid_t pid); ///< послать запрос
+    static bool m_isTerminate;
 protected:
     IBaseInterface();
     virtual ~IBaseInterface();
