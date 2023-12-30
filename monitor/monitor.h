@@ -184,11 +184,10 @@ bool Monitor<TInterface>::RestartProgram(const pid_t pid)
     {
         if (it.watched && it.pid == pid)
         {
-            pid_t newPid = StartProgram(it);
-            boost::json::value custom_data{{"Started program", it.pid}};
+            boost::json::value custom_data{{"Restarted program PID", it.pid}};
             BOOST_LOG_TRIVIAL(info) << boost::log::add_value(boost_logger::additional_data, custom_data)
-                                    << "Start program!"sv;
-            return -1 != newPid;
+                                    << "Restarted program!"sv;
+            return -1 != StartProgram(it);;
         }
     }
     return true;
