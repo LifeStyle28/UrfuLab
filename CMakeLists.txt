@@ -12,10 +12,10 @@ if(Boost_FOUND)
     include_directories(${Boost_INCLUDE_DIRS})
 endif()
 
-# add_subdirectory(client)
 add_subdirectory(logger)
+add_subdirectory(client)
 add_subdirectory(monitor)
-# add_subdirectory(server)
+add_subdirectory(server)
 
 include_directories(
     client

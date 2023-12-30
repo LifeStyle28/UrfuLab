@@ -5,6 +5,7 @@ RUN apt update && \
     apt install -y \
       python3-pip \
       cmake \
+      qtbase5-dev \
     && \
     pip3 install conan==1.59.0
 
@@ -27,18 +28,25 @@ RUN cd /app/build && \
 # Второй контейнер в том же докерфайле
 FROM ubuntu:22.04 as run
 
-# Создадим пользователя admin
-RUN groupadd -r admin && useradd -mrg admin admin
-USER admin
+RUN apt update && \
+    apt install -y \
+      libqt5network5
+
+# Создадим пользователя admin (нужен root для создания файла лога, поэтому закоментил)
+#RUN groupadd -r admin && useradd -mrg admin admin
+#USER admin
 
 # Скопируем приложение со сборочного контейнера в директорию /app, а также все библиотеки
 COPY --from=build /app/build/lib/* /app/
 COPY --from=build /app/build/bin/monitor /app/
-# COPY --from=build /app/build/bin/client /app/ (нужно будет раскомментировать)
-# COPY --from=build /app/build/bin/server /app/ (нужно будет раскомментировать)
+COPY --from=build /app/build/bin/client /app/
+COPY --from=build /app/build/bin/server /app/
 
 # добавим переменную окружения, чтобы библиотеки были видны
 ENV LD_LIBRARY_PATH=/app/
 
-# Запускаем мониторинг
-ENTRYPOINT ["/app/monitor"]
+# чтобы упростить запус программ по относительному пути
+WORKDIR "/app/"
+
+# Запускаем мониторинг (если не демон, то раскомментировать)
+#ENTRYPOINT ["/app/monitor"]

@@ -32,10 +32,15 @@ void MyFormatter(logging::record_view const& rec, logging::formatting_ostream& s
 void InitLogging()
 {
     logging::add_common_attributes();
-    logging::add_console_log(std::cout, keywords::format = &MyFormatter,
-        logging::keywords::auto_flush = true);
+    // Закоментил так как процесс демонизируется
+//    logging::add_console_log(std::cout, keywords::format = &MyFormatter,
+//        logging::keywords::auto_flush = true);
     logging::core::get()->set_filter(
         logging::trivial::severity >= logging::trivial::info);
+    logging::add_file_log("application.log", keywords::format = &MyFormatter, boost::log::keywords::auto_flush = true),
+                                boost::log::keywords::open_mode = (std::ios::out | std::ios::app);
+
+
 }
 
 } // namespace boost_logger
