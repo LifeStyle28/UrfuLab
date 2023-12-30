@@ -38,6 +38,7 @@ void TcpServer::receiveData()
     in >> pid >> time;
     if (!in.commitTransaction())
         return;
+    // TODO Добавть логирование
 //    qDebug() << "Received data from client - PID:" << pid << ", Time:" << QDateTime::fromSecsSinceEpoch(time).toString();
 
     QThread::sleep(2);

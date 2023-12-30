@@ -60,11 +60,7 @@ void TcpClient::ReceiveData()
     in >> pid >> time;
     if (!in.commitTransaction())
         return;
-//    json::value customData{{}};
-//    BOOST_LOG_TRIVIAL(info) << logging::add_value(additional_data, customData)
-//                            << "Client receive data!"sv
-//                            << "PID: " << pid;
-//                            << "\tTime: " << QDateTime::fromSecsSinceEpoch(time).toString();
+    // TODO Добавить логирование
     QThread::sleep(2);
     SendData();
 }

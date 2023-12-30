@@ -5,7 +5,7 @@ RUN apt update && \
     apt install -y \
       python3-pip \
       cmake \
-      qtbase5-dev \
+      qtbase5-dev \    # для сервера и клиента
     && \
     pip3 install conan==1.59.0
 
@@ -30,10 +30,9 @@ FROM ubuntu:22.04 as run
 
 RUN apt update && \
     apt install -y \
-      net-tools \
-      libqt5network5
+      libqt5network5   # для сервера и клиента
 
-# Создадим пользователя admin
+# Создадим пользователя admin (нужен root для создания файла лога, поэтому закоментил)
 #RUN groupadd -r admin && useradd -mrg admin admin
 #USER admin
 
@@ -46,8 +45,8 @@ COPY --from=build /app/build/bin/server /app/
 # добавим переменную окружения, чтобы библиотеки были видны
 ENV LD_LIBRARY_PATH=/app/
 
+# чтобы упростить запус программ по относительному пути
 WORKDIR "/app/"
-#CMD chmod o+w /app
-#CMD touch ./test.txt
-# Запускаем мониторинг
+
+# Запускаем мониторинг (если не демон, то раскомментировать)
 #ENTRYPOINT ["/app/monitor"]

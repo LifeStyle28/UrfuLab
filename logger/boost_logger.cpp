@@ -32,6 +32,7 @@ void MyFormatter(logging::record_view const& rec, logging::formatting_ostream& s
 void InitLogging()
 {
     logging::add_common_attributes();
+    // Закоментил так как процесс демонизируется
 //    logging::add_console_log(std::cout, keywords::format = &MyFormatter,
 //        logging::keywords::auto_flush = true);
     logging::core::get()->set_filter(
