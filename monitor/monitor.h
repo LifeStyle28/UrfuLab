@@ -1,7 +1,7 @@
 #pragma once
 
 #include "boost_logger.h"
-
+#include <iostream>
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
@@ -42,12 +42,12 @@ protected:
     bool Terminate(); ///< завершить мониторинг
 private:
     t_tasks m_tasks; ///< отслеживаемые задачи
-    std::chrono::seconds m_workTime; // @TODO - сделать вычисление
+    std::chrono::time_point<std::chrono::steady_clock> m_startTime; // @TODO - сделать вычисление
 };
 
 template <typename TInterface>
 Monitor<TInterface>::Monitor() :
-    t_interface()
+    t_interface(), m_startTime(std::chrono::steady_clock::now())
 {
 }
 
@@ -61,6 +61,7 @@ template <typename TInterface>
 bool Monitor<TInterface>::Init()
 {
     // @TODO - создаем pipe для приема заявок на наблюдение
+    t_interface::InitPipe();
      
     // запускаем все необходимые процессы
     if (!StartAllPrograms())
@@ -71,21 +72,35 @@ bool Monitor<TInterface>::Init()
         return false;
     }
     // @TODO - демонизируем процесс монитор
+    t_interface::ToDaemon();
+    
+}
 
-    return true;
+template <typename TInterface>
+std::chrono::seconds Monitor<TInterface>::WorkingTime()
+{
+    return std::chrono::duration_cast<std::chrono::seconds>
+        (std::chrono::steady_clock::now() - m_startTime);
 }
 
 template <typename TInterface>
 bool Monitor<TInterface>::Exec()
 {
-    while (/*!is_terminated()*/1) // @TODO - подумать на счёт проверки не терминирован ли процесс
+    while (!is_terminated()::m_isTerminate) // @TODO - подумать на счёт проверки не терминирован ли процесс
     {
+        for (typename t_tasks::value_type& task : m_tasks)
+        {
+            boost::json::value custom_data{ {"Process status(pid, ping_time)", task.first, task.second.count()} };
+            BOOST_LOG_TRIVIAL(info) << boost::log::add_value(boost_logger::additional_data, custom_data)
+                << "Process status!"sv;
+        }
+        ProcessTaskRequests();
         constexpr struct timespec WDT_INSPECT_TO = {3, 0};
         // отслеживаем и выполняем перезапуск завершившихся процессов
         struct timespec rtm = WDT_INSPECT_TO;
         while (nanosleep(&rtm, &rtm) != 0)
         {
-            if (/*is_terminated()*/0)
+            if (is_terminated()0)
             {
                 break;
             }
@@ -142,7 +157,7 @@ void Monitor<TInterface>::Close()
 template <typename TInterface>
 pid_t Monitor<TInterface>::StartProgram(t_prog& prog) const
 {
-    // @TODO - написать запуск программы
+    // @TODO - запуск программы
     pid_t pid = fork();
     if (pid == -1) {
         // Ошибка при вызове fork()
@@ -158,7 +173,8 @@ pid_t Monitor<TInterface>::StartProgram(t_prog& prog) const
     }
     else {
         // Код, выполняемый родительским процессом
-        return pid;
+        prog.pid = t_interface::RunProgram(prog.path, prog.args);
+        return prog.pid;
     }
     return 0;
 }
@@ -199,7 +215,7 @@ bool Monitor<TInterface>::StartAllPrograms()
         }
     }
 
-    while (!tasks.empty() /*&& !is_terminated()*/) // @TODO - раскомментировать функцию, когда будет написана
+    while (!tasks.empty() && !is_terminated()::m_isTerminate) // @TODO - раскомментировать функцию, когда будет написана
     {
         pid_t pid = -1;
         if (t_interface::GetRequestTask(pid))
@@ -241,7 +257,7 @@ void Monitor<TInterface>::ProcessTaskRequests()
     // считываем из очереди pid процессов подписавшихся на наблюдение
     for (size_t i = 0; i < max_count; ++i)
     {
-        if (/*is_terminated()*/0) // @TODO - раскомментировать, когда будет написана функция
+        if (is_terminated()::m_isTerminate)) // @TODO - раскомментировать, когда будет написана функция
         {
             break;
         }

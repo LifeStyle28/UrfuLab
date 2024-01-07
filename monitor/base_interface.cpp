@@ -11,13 +11,12 @@ namespace fs = std::filesystem;
 
 static bool wdt_create_pipe([[maybe_unused]] int fd[2])
 {
-    // @TODO - создать pipe
+    // @TODO - создание pipe
     if (pipe(fd) < 0)
     {
         std::cerr << "Failed to create pipe" << std::endl;
-        return EXIT_FAILURE;
+        return false;
     }
-    const pid_t pid = fork();
 
     if (pid == -1)
     {
@@ -41,26 +40,105 @@ static bool wdt_create_pipe([[maybe_unused]] int fd[2])
             std::cout << "Read, buf = " << buf << std::endl;
         }
     }
-    close(fd[0]);
-    close(fd[1]);
+    int n = fcntl(pipedes[0], F_GETFL);
+    fcntl(pipedes[0], F_SETFL, n | O_NONBLOCK);
+    n = fcntl(pipedes[1], F_GETFL);
+    fcntl(pipedes[1], F_SETFL, n | O_NONBLOCK);
     return true;
 }
 
 static pid_t run_program([[maybe_unused]] fs::path path, [[maybe_unused]] const std::vector<std::string>& args)
 {
-    // @TODO - написать запуск программы
-    
+    // @TODO - запуск программы
+    // подготавливаем аргументы для запуска
     std::vector<const char*> argv;
     argv.push_back(path.c_str());
     for (const std::string& arg : args)
     {
-            argv.push_back(arg.c_str());
+        argv.push_back(arg.c_str());
     }
-        argv.push_back(NULL);
+    argv.push_back(NULL);
 
-    pid_t pid = system(command.c_str());
+    posix_spawn_file_actions_t fileActions;
 
-    return -1;
+    int result = posix_spawn_file_actions_init(&fileActions);
+    if (result != 0)
+    {
+        std::cerr << "posix_spawn_file_actions_init failed" << std::endl;
+        return -1;
+    }
+
+    result = posix_spawn_file_actions_addclose(&fileActions, STDOUT_FILENO);
+    if (result != 0)
+    {
+        std::cerr << "posix_spawn_file_actions_addclose failed" << std::endl;
+        return -1;
+    }
+
+    posix_spawn_file_actions_t* pFileActions = &fileActions;
+
+    posix_spawnattr_t attr;
+
+    result = posix_spawnattr_init(&attr);
+    if (result != 0)
+    {
+        std::cerr << "posix_spawnattr_init failed" << std::endl;
+        return -1;
+    }
+
+    result = posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSIGMASK);
+    if (result != 0)
+    {
+        std::cerr << "posix_spawnattr_setflags failed" << std::endl;
+        return -1;
+    }
+
+    sigset_t mask;
+    sigfillset(&mask);
+    result = posix_spawnattr_setsigmask(&attr, &mask);
+    if (result != 0)
+    {
+        std::cerr << "posix_spawnattr_setsigmask failed" << std::endl;
+        return -1;
+    }
+    posix_spawnattr_t* pAttr = &attr;
+
+    pid_t childPid;
+    result = posix_spawnp(&childPid, path.c_str(), pFileActions, pAttr, const_cast<char**>(&argv[0]),
+        nullptr);
+    if (result != 0)
+    {
+        std::cerr << "posix_spawn failed" << std::endl;
+        return -1;
+    }
+
+    if (pAttr != NULL)
+    {
+        result = posix_spawnattr_destroy(pAttr);
+        if (result != 0)
+        {
+            std::cerr << "posix_spawnattr_destroy failed" << std::endl;
+            return -1;
+        }
+    }
+
+    if (pFileActions != NULL) {
+        result = posix_spawn_file_actions_destroy(pFileActions);
+        if (result != 0)
+        {
+            std::cerr << "posix_spawn_file_actions_destroy failed" << std::endl;
+            return -1;
+        }
+    }
+
+    int status;
+    result = waitpid(childPid, &status, WNOHANG);
+    if (result == -1)
+    {
+        std::cerr << "waitpid failed" << std::endl;
+        return -1;
+    }
+    return childPid;
 }
 
 static pid_t run_program(fs::path path)
@@ -129,7 +207,7 @@ bool IBaseInterface::PreparePrograms()
     m_progs.clear();
     for ([[maybe_unused]] auto& it : predefined_progs)
     {
-        // @TODO - добавить инициализацию программ в m_progs, в том числе аргумент командной строки
+        // @TODO - инициализация программ в m_progs, в том числе аргумент командной строки
         std::string program_name = it.first;
         std::string program_argument = it.second;
 
@@ -139,9 +217,18 @@ bool IBaseInterface::PreparePrograms()
         }
 
         // Инициализируем программу и добавляем ее в m_progs
-        Program program(program_name, program_argument);
-        m_progs.push_back(program);
-
+        t_prog prog;
+        prog.pid = 0;
+        prog.path = it.path;
+        foreach(const char* const& arg, it.args)
+        {
+            if (arg)
+            {
+                prog.args.push_back(arg);
+            }
+        }
+        prog.watched = it.watched;
+        m_progs.push_back(prog);
     }
 
     return true;
@@ -149,12 +236,8 @@ bool IBaseInterface::PreparePrograms()
 
 bool IBaseInterface::TerminateProgram([[maybe_unused]] const pid_t pid) const
 {
-    // @TODO - написать терминирование процесса по заданному pid
-     // Попробуем сначала отправить SIGTERM сигнал
-    if (kill(pid, SIGTERM) == 0) {
-        return true;
-    }
-    // Если отправка SIGTERM не удалась, пробуем отправить SIGKILL сигнал
+    // @TODO - терминирование процесса по заданному pid
+    //Пробуем отправить SIGKILL сигнал
     if (kill(pid, SIGKILL) == 0) {
         return true;
     }
@@ -183,9 +266,8 @@ pid_t IBaseInterface::FindTerminatedTask() const
 
 bool IBaseInterface::GetRequestTask([[maybe_unused]] pid_t& pid) const
 {
-    // @TODO - считать пид процесса, который пинговал из пайпа
-    pid = getpid();
-    return true;
+    // @TODO - считывание пид процесса, который пинговал из пайпа
+    return sizeof(pid_t) == read(m_wdtPipe[0], &pid, sizeof(pid_t));
 }
 
 bool IBaseInterface::WaitExitAllPrograms() const
@@ -201,7 +283,7 @@ bool IBaseInterface::WaitExitAllPrograms() const
 
 bool IBaseInterface::ToDaemon() const
 {
-    // @TODO - демонизировать процесс мониторинга
+    // @TODO - демонизирование процесса мониторинга
     pid_t pid = fork();
 
     if (pid < 0) {
@@ -232,9 +314,15 @@ bool IBaseInterface::ToDaemon() const
 
 void IBaseInterface::Destroy()
 {
-    // @TODO - закрыть файловые дескрипторы пайпа
-    close(m_pipeRead);
-    close(m_pipeWrite);
+    // @TODO - закрытие файловых дескрипторов пайпа
+    if (m_wdtPipe[0] != -1)
+    {
+        close(m_wdtPipe[0]);
+    }
+    if (m_wdtPipe[1] != -1)
+    {
+        close(m_wdtPipe[1]);
+    }
     m_init = false;
 }
 
