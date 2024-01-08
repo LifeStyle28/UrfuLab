@@ -9,16 +9,33 @@ namespace monitor
 
 namespace fs = std::filesystem;
 
-static bool wdt_create_pipe([[maybe_unused]] int fd[2])
+static bool wdt_create_pipe( int fd[2])
 {
     // @TODO - создать pipe
-    return true;
+    return pipe(fd) == 0;
 }
 
-static pid_t run_program([[maybe_unused]] fs::path path, [[maybe_unused]] const std::vector<std::string>& args)
+static pid_t run_program(fs::path path, const std::vector<std::string>& args)
 {
     // @TODO - написать запуск программы
+    pid_t pid = fork();
+    if (pid == -1) {
     return -1;
+    }
+    else if (pid > 0) {
+        return pid;
+    } 
+    else { 
+        std::vector<const char*> cargs;
+        cargs.reserve(args.size() + 2);
+        cargs.push_back(path.c_str());
+        for (const auto& arg : args) {
+            cargs.push_back(arg.c_str());
+        }
+        cargs.push_back(nullptr);
+        execvp(path.c_str(), const_cast<char *const *>(cargs.data()));
+        _exit(EXIT_FAILURE);
+    }
 }
 
 static pid_t run_program(fs::path path)
@@ -85,19 +102,27 @@ static const t_predefined_program predefined_progs[] =
 bool IBaseInterface::PreparePrograms()
 {
     m_progs.clear();
-    for ([[maybe_unused]] auto& it : predefined_progs)
+    for (const auto& it : predefined_progs)
     {
         // @TODO - добавить инициализацию программ в m_progs, в том числе аргумент командной строки
         // здесь по сути просто переложить из одной структуры в другую
+        std::vector<std::string> args;
+        for (int i = 0; it.args[i]; ++i) {
+            args.emplace_back(it.args[i]);
+        }
+        auto& prog = m_progs.emplace_back();
+        prog.pid = 0; // PID will be set when the program is actually run
+        prog.path = it.path;
+        prog.args = std::move(args);
+        prog.watched = it.watched;
     }
-
     return true;
 }
 
-bool IBaseInterface::TerminateProgram([[maybe_unused]] const pid_t pid) const
+bool IBaseInterface::TerminateProgram(const pid_t pid) const
 {
     // @TODO - написать терминирование процесса по заданному pid
-    return false;
+    return kill(pid, SIGTERM) == 0;
 }
 
 pid_t IBaseInterface::FindTerminatedTask() const
@@ -118,10 +143,10 @@ pid_t IBaseInterface::FindTerminatedTask() const
     return pid;
 }
 
-bool IBaseInterface::GetRequestTask([[maybe_unused]] pid_t& pid) const
+bool IBaseInterface::GetRequestTask(pid_t& pid) const
 {
     // @TODO - считать пид процесса, который пинговал из пайпа
-    return true;
+    return read(m_wdtPipe[0], &pid, sizeof(pid_t)) > 0;
 }
 
 bool IBaseInterface::WaitExitAllPrograms() const
@@ -138,13 +163,17 @@ bool IBaseInterface::WaitExitAllPrograms() const
 bool IBaseInterface::ToDaemon() const
 {
     // @TODO - демонизировать процесс мониторинга
+    if (daemon(1, 0) == -1) {
+        return false;
+    }
     return true;
 }
 
 void IBaseInterface::Destroy()
 {
     // @TODO - закрыть файловые дескрипторы пайпа
-    m_init = false;
+    close(m_wdtPipe[0]);
+    close(m_wdtPipe[1]);
 }
 
 IBaseInterface::t_progs& IBaseInterface::Progs()
