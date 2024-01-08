@@ -11,13 +11,25 @@ namespace fs = std::filesystem;
 
 static bool wdt_create_pipe([[maybe_unused]] int fd[2])
 {
-    // @TODO - создать pipe
+    // создадим pipe
+    if (pipe(fd) < 0)
+	{
+		std::cerr << "pipe fail" << std::endl;
+		return false;
+	}
     return true;
 }
 
 static pid_t run_program([[maybe_unused]] fs::path path, [[maybe_unused]] const std::vector<std::string>& args)
 {
-    // @TODO - написать запуск программы
+    // Запустим программу
+    pid_t pid = fork();
+    if (pid == 0) {
+    // В дочернем процессе запустим указанную программу
+    execvp(path.c_str(), argv);
+    // Если execvp() вернет ошибку, значит запуск программы не удался
+    _exit(1);
+    }
     return -1;
 }
 
@@ -87,16 +99,37 @@ bool IBaseInterface::PreparePrograms()
     m_progs.clear();
     for ([[maybe_unused]] auto& it : predefined_progs)
     {
-        // @TODO - добавить инициализацию программ в m_progs, в том числе аргумент командной строки
-        // здесь по сути просто переложить из одной структуры в другую
-    }
+        // Создадим новую запись в списке наблюдаемых программ
+        t_prog prog;
+        prog.pid = it.pid;
+        prog.path = it.path;
+        prog.args = it.args;
+        prog.watched = it.watched;
 
+        // Добавим запись в список
+        m_progs.push_back(prog);
+    }
     return true;
 }
 
 bool IBaseInterface::TerminateProgram([[maybe_unused]] const pid_t pid) const
 {
-    // @TODO - написать терминирование процесса по заданному pid
+    // Проверим, что процесс существует
+    if (kill(pid, 0) == -1) {
+        return false;
+    }
+
+    // Отправим процессу сигнал SIGTERM
+    kill(pid, SIGTERM);
+
+    // Заждём завершения процесса
+    int status = 0;
+    waitpid(pid, &status, 0);
+
+    // Если процесс завершился с ошибкой, вернём false
+    if (WIFSIGNALED(status)) {
+        return false;
+    }
     return false;
 }
 
@@ -120,7 +153,18 @@ pid_t IBaseInterface::FindTerminatedTask() const
 
 bool IBaseInterface::GetRequestTask([[maybe_unused]] pid_t& pid) const
 {
-    // @TODO - считать пид процесса, который пинговал из пайпа
+    // Считаем пид процесса, который пинговал из пайпа
+    // Проверим, что канал связи существует
+    if (m_wdtPipe[0] == -1) {
+        return false;
+    }
+
+    // Прочитаем из канала связи PID процесса, который пинговал
+    ssize_t n = read(m_wdtPipe[0], &pid, sizeof(pid_t));
+    if (n != sizeof(pid_t)) {
+        return false;
+    }
+    
     return true;
 }
 
@@ -137,13 +181,34 @@ bool IBaseInterface::WaitExitAllPrograms() const
 
 bool IBaseInterface::ToDaemon() const
 {
-    // @TODO - демонизировать процесс мониторинга
+    // Демонизируем процесс мониторинга
+    // Закроем стандартные потоки ввода/вывода
+    close(STDIN_FILENO);
+    close(STDOUT_FILENO);
+    close(STDERR_FILENO);
+
+    // Перейдем в корневой каталог
+    chdir("/");
+
+    // Запустим себя в фоновом режиме
+    setsid();
+
+    // Отключим сигнал SIGHUP
+    signal(SIGHUP, SIG_IGN);
+
     return true;
 }
 
 void IBaseInterface::Destroy()
 {
-    // @TODO - закрыть файловые дескрипторы пайпа
+    // Закроем файловые дескрипторы пайпа
+    if (m_wdtPipe[0] != -1) {
+        close(m_wdtPipe[0]);
+    }
+    if (m_wdtPipe[1] != -1) {
+        close(m_wdtPipe[1]);
+    }
+    
     m_init = false;
 }
 

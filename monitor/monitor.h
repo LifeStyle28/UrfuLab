@@ -42,7 +42,7 @@ protected:
     bool Terminate(); ///< завершить мониторинг
 private:
     t_tasks m_tasks; ///< отслеживаемые задачи
-    std::chrono::seconds m_workTime; // @TODO - сделать вычисление
+    std::chrono::seconds m_workTime; // время работы мониторинга
 };
 
 template <typename TInterface>
@@ -57,10 +57,22 @@ Monitor<TInterface>::~Monitor()
     Close();
 }
 
+// добавим проверку, не терминирован ли процесс
+template <typename TInterface>
+bool Monitor<TInterface>::is_terminated(const pid_t pid)
+{
+  int status;
+  return waitpid(pid, &status, WNOHANG) == pid && WIFEXITED(status);
+}
+
 template <typename TInterface>
 bool Monitor<TInterface>::Init()
 {
-    // @TODO - создаем pipe для приема заявок на наблюдение
+    // создаем pipe для приема заявок на наблюдение
+    if (!CreateWdtPipe())
+    {
+        return false;
+    }
     // запускаем все необходимые процессы
     if (!StartAllPrograms())
     {
@@ -69,7 +81,11 @@ bool Monitor<TInterface>::Init()
             boost::log::add_value(boost_logger::additional_data, custom_data) << "error"sv;
         return false;
     }
-    // @TODO - демонизируем процесс монитор
+    // демонизируем процесс монитор
+    if (!Deamonize())
+    {
+        return false;
+    }
 
     return true;
 }
@@ -77,14 +93,14 @@ bool Monitor<TInterface>::Init()
 template <typename TInterface>
 bool Monitor<TInterface>::Exec()
 {
-    while (/*!is_terminated()*/1) // @TODO - подумать на счёт проверки не терминирован ли процесс
+    while (!is_terminated(pid) == 1) 
     {
         constexpr struct timespec WDT_INSPECT_TO = {3, 0};
         // отслеживаем и выполняем перезапуск завершившихся процессов
         struct timespec rtm = WDT_INSPECT_TO;
         while (nanosleep(&rtm, &rtm) != 0)
         {
-            if (/*is_terminated()*/0)
+            if (is_terminated() == 0)
             {
                 break;
             }
@@ -141,7 +157,44 @@ void Monitor<TInterface>::Close()
 template <typename TInterface>
 pid_t Monitor<TInterface>::StartProgram(t_prog& prog) const
 {
-    // @TODO - написать запуск программы
+    // напишем запуск программы
+    // создаем процесс
+
+    pid_t pid = fork();
+    if (pid < 0)
+    {
+        return -1;
+    }
+
+    // если родительский процесс, то завершаем его
+
+    if (pid > 0)
+    {
+        return pid;
+    }
+
+    // меняем корневую директорию на "/"
+
+    chdir("/");
+
+    // перенаправляем stdin, stdout и stderr в /dev/null
+
+    int fd_null = open("/dev/null", O_RDWR);
+    if (fd_null < 0)
+    {
+        exit(EXIT_FAILURE);
+    }
+
+    dup2(fd_null, STDIN_FILENO);
+    dup2(fd_null, STDOUT_FILENO);
+    dup2(fd_null, STDERR_FILENO);
+
+    // запускаем программу
+
+    if (execv(prog.path.c_str(), prog.args.data()) < 0)
+    {
+        exit(EXIT_FAILURE);
+    }
     return 0;
 }
 
@@ -181,7 +234,7 @@ bool Monitor<TInterface>::StartAllPrograms()
         }
     }
 
-    while (!tasks.empty() /*&& !is_terminated()*/) // @TODO - раскомментировать функцию, когда будет написана
+    while (!tasks.empty() && !is_terminated(pid)) 
     {
         pid_t pid = -1;
         if (t_interface::GetRequestTask(pid))
@@ -223,7 +276,7 @@ void Monitor<TInterface>::ProcessTaskRequests()
     // считываем из очереди pid процессов подписавшихся на наблюдение
     for (size_t i = 0; i < max_count; ++i)
     {
-        if (/*is_terminated()*/0) // @TODO - раскомментировать, когда будет написана функция
+        if (is_terminated() == 0) 
         {
             break;
         }
