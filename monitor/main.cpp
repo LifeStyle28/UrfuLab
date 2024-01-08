@@ -46,6 +46,8 @@ int main()
         BOOST_LOG_TRIVIAL(info) << logging::add_value(additional_data, customData)
                                 << "Monitor has started"sv;
         // @TODO - произвести инициализацию и запустить мониторинг
+        monitor.initialize();         
+        monitor.start();
     }
     catch (const std::exception& e)
     {
