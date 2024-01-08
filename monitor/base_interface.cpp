@@ -12,13 +12,33 @@ namespace fs = std::filesystem;
 static bool wdt_create_pipe([[maybe_unused]] int fd[2])
 {
     // @TODO - создать pipe
+    if (pipe(fd) == -1)
+    {
+        return false;
+    }
     return true;
 }
 
 static pid_t run_program([[maybe_unused]] fs::path path, [[maybe_unused]] const std::vector<std::string>& args)
 {
     // @TODO - написать запуск программы
-    return -1;
+    pid_t pid = fork();
+    if (pid < 0) 
+    {
+        return -1;
+    }
+    else if (pid == 0) 
+    {
+        std::vector<char*> c_args;
+        for (const auto& arg : args) 
+        {
+            c_args.push_back(const_cast<char*>(arg.c_str()));
+        }
+        c_args.push_back(nullptr);
+        execv(path.c_str(), c_args.data());
+        exit(0);
+    }
+    return pid;
 }
 
 static pid_t run_program(fs::path path)
@@ -89,6 +109,14 @@ bool IBaseInterface::PreparePrograms()
     {
         // @TODO - добавить инициализацию программ в m_progs, в том числе аргумент командной строки
         // здесь по сути просто переложить из одной структуры в другую
+        t_program prog;
+        prog.pid = it.pid;
+        prog.path = it.path;
+        for (int i = 0; it.args[i] != nullptr; ++i)
+        {
+            prog.args.push_back(it.args[i]);
+        }
+        m_progs.push_back(prog);
     }
 
     return true;
@@ -97,7 +125,11 @@ bool IBaseInterface::PreparePrograms()
 bool IBaseInterface::TerminateProgram([[maybe_unused]] const pid_t pid) const
 {
     // @TODO - написать терминирование процесса по заданному pid
-    return false;
+      if (kill(pid, SIGTERM) == 0) 
+    {
+        return true;
+    }
+      return false;
 }
 
 pid_t IBaseInterface::FindTerminatedTask() const
@@ -121,7 +153,12 @@ pid_t IBaseInterface::FindTerminatedTask() const
 bool IBaseInterface::GetRequestTask([[maybe_unused]] pid_t& pid) const
 {
     // @TODO - считать пид процесса, который пинговал из пайпа
-    return true;
+    ssize_t bytes_read = read(m_wdtPipe[0], &pid, sizeof(pid_t));
+    if (bytes_read == sizeof(pid_t)) 
+    {
+        return true;
+    }
+    return false;
 }
 
 bool IBaseInterface::WaitExitAllPrograms() const
@@ -138,12 +175,18 @@ bool IBaseInterface::WaitExitAllPrograms() const
 bool IBaseInterface::ToDaemon() const
 {
     // @TODO - демонизировать процесс мониторинга
+    if (daemon(1, 0) == -1) 
+    {
+        return false;
+    }
     return true;
 }
 
 void IBaseInterface::Destroy()
 {
     // @TODO - закрыть файловые дескрипторы пайпа
+    close(m_wdtPipe[0]);
+    close(m_wdtPipe[1]);
     m_init = false;
 }
 
