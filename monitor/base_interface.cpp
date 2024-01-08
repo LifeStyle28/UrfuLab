@@ -18,7 +18,6 @@ static bool wdt_create_pipe( int fd[2])
 static pid_t run_program(fs::path path, const std::vector<std::string>& args)
 {
     // @TODO - написать запуск программы
-    pid_t pid = fork();
     if (pid == -1) {
     return -1;
     }
@@ -111,7 +110,7 @@ bool IBaseInterface::PreparePrograms()
             args.emplace_back(it.args[i]);
         }
         auto& prog = m_progs.emplace_back();
-        prog.pid = 0; // PID will be set when the program is actually run
+        prog.pid = 0;
         prog.path = it.path;
         prog.args = std::move(args);
         prog.watched = it.watched;
@@ -172,8 +171,11 @@ bool IBaseInterface::ToDaemon() const
 void IBaseInterface::Destroy()
 {
     // @TODO - закрыть файловые дескрипторы пайпа
-    close(m_wdtPipe[0]);
-    close(m_wdtPipe[1]);
+    int n = fcntl(pipedes[0], F_GETFL);
+    fcntl(pipedes[0], F_SETFL, n | O_NONBLOCK);
+    n = fcntl(pipedes[1], F_GETFL);
+    fcntl(pipedes[1], F_SETFL, n | O_NONBLOCK);
+    return true;
 }
 
 IBaseInterface::t_progs& IBaseInterface::Progs()
