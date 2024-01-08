@@ -42,7 +42,7 @@ protected:
     bool Terminate(); ///< завершить мониторинг
 private:
     t_tasks m_tasks; ///< отслеживаемые задачи
-    std::chrono::seconds m_workTime; // @TODO - сделать вычисление
+    std::chrono::time_point<std::chrono::steady_clock> m_startTime; // @TODO - сделать вычисление
 };
 
 template <typename TInterface>
@@ -60,7 +60,7 @@ Monitor<TInterface>::~Monitor()
 template <typename TInterface>
 bool Monitor<TInterface>::Init()
 {
-    // @TODO - создаем pipe для приема заявок на наблюдение
+    t_interface::InitPipe();// @TODO - создаем pipe для приема заявок на наблюдение
     // запускаем все необходимые процессы
     if (!StartAllPrograms())
     {
@@ -69,7 +69,7 @@ bool Monitor<TInterface>::Init()
             boost::log::add_value(boost_logger::additional_data, custom_data) << "error"sv;
         return false;
     }
-    // @TODO - демонизируем процесс монитор
+    t_interface::ToDaemon(); // @TODO - демонизируем процесс монитор
 
     return true;
 }
@@ -77,7 +77,7 @@ bool Monitor<TInterface>::Init()
 template <typename TInterface>
 bool Monitor<TInterface>::Exec()
 {
-    while (/*!is_terminated()*/1) // @TODO - подумать на счёт проверки не терминирован ли процесс
+    while (!is_terminated()::m_isTerminate)  // @TODO - подумать на счёт проверки не терминирован ли процесс
     {
         constexpr struct timespec WDT_INSPECT_TO = {3, 0};
         // отслеживаем и выполняем перезапуск завершившихся процессов
@@ -142,6 +142,23 @@ template <typename TInterface>
 pid_t Monitor<TInterface>::StartProgram(t_prog& prog) const
 {
     // @TODO - написать запуск программы
+    pid_t pid = fork();
+    if (pid == -1) 
+    {
+        perror("Ошибка при вызове fork()");
+        exit(EXIT_FAILURE);
+    }
+    else if (pid == 0) 
+    {
+        execvp(prog.path, prog.args);
+        perror("Ошибка при запуске");
+        exit(EXIT_FAILURE);
+    }
+    else 
+    {
+        prog.pid = t_interface::RunProgram(prog.path, prog.args);
+        return prog.pid;
+    }
     return 0;
 }
 
@@ -181,7 +198,7 @@ bool Monitor<TInterface>::StartAllPrograms()
         }
     }
 
-    while (!tasks.empty() /*&& !is_terminated()*/) // @TODO - раскомментировать функцию, когда будет написана
+    while (!tasks.empty() && !is_terminated()::m_isTerminate)// @TODO - раскомментировать функцию, когда будет написана
     {
         pid_t pid = -1;
         if (t_interface::GetRequestTask(pid))
@@ -223,7 +240,7 @@ void Monitor<TInterface>::ProcessTaskRequests()
     // считываем из очереди pid процессов подписавшихся на наблюдение
     for (size_t i = 0; i < max_count; ++i)
     {
-        if (/*is_terminated()*/0) // @TODO - раскомментировать, когда будет написана функция
+        if (is_terminated()::m_isTerminate)) // @TODO - раскомментировать, когда будет написана функция
         {
             break;
         }
