@@ -150,22 +150,8 @@ template <typename TInterface>
 pid_t Monitor<TInterface>::StartProgram(t_prog& prog) const
 {
     // @TODO - написать запуск программы
-    pid_t pid = fork();
-    if (pid == -1) {
-        perror("Ошибка при вызове fork()");
-        exit(EXIT_FAILURE);
-    }
-    else if (pid == 0) {
-        execvp(prog.path, prog.args);
-        perror("Ошибка при запуске программы");
-        exit(EXIT_FAILURE);
-    }
-    else {
-        // Код, выполняемый родительским процессом
-        prog.pid = t_interface::RunProgram(prog.path, prog.args);
-        return prog.pid;
-    }
-    return 0;
+    prog.pid = t_interface::RunProgram(prog.path, prog.args); 
+    return prog.pid;
 }
 
 template <typename TInterface>
@@ -204,7 +190,7 @@ bool Monitor<TInterface>::StartAllPrograms()
         }
     }
 
-    while (!tasks.empty() && !is_terminated()) // @TODO - раскомментировать функцию, когда будет написана
+    while (!tasks.empty() && !is_terminated()::m_isTerminate) // @TODO - раскомментировать функцию, когда будет написана
     {
         pid_t pid = -1;
         if (t_interface::GetRequestTask(pid))
@@ -246,7 +232,7 @@ void Monitor<TInterface>::ProcessTaskRequests()
     // считываем из очереди pid процессов подписавшихся на наблюдение
     for (size_t i = 0; i < max_count; ++i)
     {
-        if (is_terminated()::m_isTerminate) // @TODO - раскомментировать, когда будет написана функция
+        if (is_terminated() == 0) // @TODO - раскомментировать, когда будет написана функция
         {
             break;
         }
