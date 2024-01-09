@@ -77,7 +77,7 @@ bool Monitor<TInterface>::Init()
 template <typename TInterface>
 bool Monitor<TInterface>::Exec()
 {
-    while (!is_terminated()::m_isTerminate)  // @TODO - подумать на счёт проверки не терминирован ли процесс
+    while (/*!is_terminated()*/1)  // @TODO - подумать на счёт проверки не терминирован ли процесс
     {
         constexpr struct timespec WDT_INSPECT_TO = {3, 0};
         // отслеживаем и выполняем перезапуск завершившихся процессов
