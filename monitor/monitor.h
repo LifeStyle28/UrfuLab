@@ -79,6 +79,13 @@ bool Monitor<TInterface>::Exec()
 {
     while (/*!is_terminated()*/1)  // @TODO - подумать на счёт проверки не терминирован ли процесс
     {
+        for (typename t_tasks::value_type& task : m_tasks)
+        {
+            boost::json::value custom_data{ {"Process status(pid, ping_time)", task.first, task.second.count()} };
+            BOOST_LOG_TRIVIAL(info) << boost::log::add_value(boost_logger::additional_data, custom_data)
+                << "Process status!"sv;
+        }
+        ProcessTaskRequests();
         constexpr struct timespec WDT_INSPECT_TO = {3, 0};
         // отслеживаем и выполняем перезапуск завершившихся процессов
         struct timespec rtm = WDT_INSPECT_TO;
