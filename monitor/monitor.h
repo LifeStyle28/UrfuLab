@@ -47,7 +47,7 @@ private:
 
 template <typename TInterface>
 Monitor<TInterface>::Monitor() :
-    t_interface()
+    t_interface(), m_startTime(std::chrono::steady_clock::now())
 {
 }
 
@@ -79,7 +79,7 @@ bool Monitor<TInterface>::Init()
 template <typename TInterface>
 bool Monitor<TInterface>::Exec()
 {
-    while (/*!is_terminated()*/1) // @TODO - подумать на счёт проверки не терминирован ли процесс
+    while (!is_terminated()::m_isTerminate)) // @TODO - подумать на счёт проверки не терминирован ли процесс
     {
         for (typename t_tasks::value_type& task : m_tasks)
         {
@@ -94,7 +94,7 @@ bool Monitor<TInterface>::Exec()
         struct timespec rtm = WDT_INSPECT_TO;
         while (nanosleep(&rtm, &rtm) != 0)
         {
-            if (/*is_terminated()*/0)
+            if (is_terminated())
             {
                 break;
             }
@@ -251,7 +251,7 @@ void Monitor<TInterface>::ProcessTaskRequests()
     // считываем из очереди pid процессов подписавшихся на наблюдение
     for (size_t i = 0; i < max_count; ++i)
     {
-        if (is_terminated()) // @TODO - раскомментировать, когда будет написана функция
+        if (is_terminated()::m_isTerminate) // @TODO - раскомментировать, когда будет написана функция
         {
             break;
         }
