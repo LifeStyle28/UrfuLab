@@ -109,19 +109,27 @@ bool IBaseInterface::PreparePrograms()
     {
         // @TODO - добавить инициализацию программ в m_progs, в том числе аргумент командной строки
         // здесь по сути просто переложить из одной структуры в другую
-        t_program prog;
-        prog.pid = it.pid;
-        prog.path = it.path;
-        for (int i = 0; it.args[i] != nullptr; ++i)
-        {
-            prog.args.push_back(it.args[i]);
-        }
-        m_progs.push_back(prog);
+        std::string program_name = it.first;
+std::string program_argument = it.second;
+if (argc > 1) 
+{
+    program_argument += " " + std::string(argv[1]);
     }
-
-    return true;
+    t_prog prog;
+    prog.pid = 0;
+    prog.path = it.path;
+    foreach(const char* const& arg, it.args)
+    {
+        if (arg)
+        {
+            prog.args.push_back(arg);
+        }
+    }
+    prog.watched = it.watched;
+    m_progs.push_back(prog);
+    }
+    return true
 }
-
 bool IBaseInterface::TerminateProgram([[maybe_unused]] const pid_t pid) const
 {
     // @TODO - написать терминирование процесса по заданному pid
