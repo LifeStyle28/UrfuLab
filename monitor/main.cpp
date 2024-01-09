@@ -46,7 +46,23 @@ int main()
         BOOST_LOG_TRIVIAL(info) << logging::add_value(additional_data, customData)
                                 << "Monitor has started"sv;
         // @TODO - произвести инициализацию и запустить мониторинг
+        if (!monitor.Init())
+        {
+            boost::json::value custom_data{ {} };
+            BOOST_LOG_TRIVIAL(error)
+                << boost::log::add_value(boost_logger::additional_data, custom_data)
+                << "failed to init monitor!";
+            return EXIT_FAILURE;
+        }
+        if (!monitor.Exec())
+        {
+            boost::json::value custom_data{};
+            BOOST_LOG_TRIVIAL(error) << boost::log::add_value(boost_logger::additional_data, custom_data)
+                << "Error in Exec!";
+            return EXIT_FAILURE;
+        }
     }
+        
     catch (const std::exception& e)
     {
         json::value customData{{"exception"s, e.what()}, {"code"s, EXIT_FAILURE}};
