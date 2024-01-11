@@ -127,6 +127,7 @@ void IBaseInterface::send_request(const pid_t pid)
     // запись pid процесса в пайп
     write(m_wdtPipe[1], &pid, sizeof(pid_t));
 }
+bool IBaseInterface::m_isTerminate = false;
 
 /**
  * Конструктор
@@ -175,27 +176,33 @@ static const t_predefined_program predefined_progs[] =
 
 bool IBaseInterface::PreparePrograms()
 {
-    m_progs.clear();
-    for ([[maybe_unused]] auto& it : predefined_progs)
-    {
-        // @TODO - добавить инициализацию программ в m_progs, в том числе аргумент командной строки
-        // здесь по сути просто переложить из одной структуры в другую
+	m_progs.clear();
+	for (const auto& it : predefined_progs)
+	{
+		// @TODO - добавить инициализацию программ в m_progs, в том числе аргумент командной строки
+		// здесь по сути просто переложить из одной структуры в другую
+		try
 		{
-			m_progs.push_back({ it.pid, it.path, it.args, it.watched });
+			m_progs.push_back({ it.pid, it.path, std::vector<std::string>(it.args, it.args + 10), it.watched });
 		}
-		catch (const char* error_message)
+		catch (const std::exception& e)
 		{
+			std::cerr << "Error: " << e.what() << std::endl;
 			return false;
 		}
-    }
+	}
 
-    return true;
+	return true;
 }
 
 bool IBaseInterface::TerminateProgram([[maybe_unused]] const pid_t pid) const
 {
     // @TODO - написать терминирование процесса по заданному pid
-	
+	if (kill(pid, SIGKILL) < 0)
+	{
+		std::cerr << strerror(errno) << std::endl;
+		return false;
+	}
 	
 }
 

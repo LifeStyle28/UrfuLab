@@ -62,7 +62,7 @@ int main()
             return EXIT_FAILURE;
         }
     }
-    }
+    
     catch (const std::exception& e)
     {
         json::value customData{{"exception"s, e.what()}, {"code"s, EXIT_FAILURE}};
