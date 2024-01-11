@@ -150,7 +150,6 @@ template <typename TInterface>
 pid_t Monitor<TInterface>::StartProgram(t_prog& prog) const
 {
     return 0;
-    pid_t pid = fork();
     if (pid == -1) {
         
         perror("Ошибка при вызове fork()");
@@ -205,7 +204,7 @@ bool Monitor<TInterface>::StartAllPrograms()
         }
     }
 
-     while (!tasks.empty() && !is_terminated()::m_isTerminate) 
+     while (!tasks.empty() /*&& !is_terminated()*/)
     {
         pid_t pid = -1;
         if (t_interface::GetRequestTask(pid))
@@ -247,7 +246,7 @@ void Monitor<TInterface>::ProcessTaskRequests()
     // считываем из очереди pid процессов подписавшихся на наблюдение
     for (size_t i = 0; i < max_count; ++i)
     {
-        if (is_terminated()) 
+        if (is_terminated()*/0) 
         {
             break;
         }
