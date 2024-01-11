@@ -42,7 +42,7 @@ protected:
     bool Terminate(); ///< завершить мониторинг
 private:
     t_tasks m_tasks; ///< отслеживаемые задачи
-    std::chrono::seconds m_workTime; // @TODO - сделать вычисление
+     std::chrono::time_point<std::chrono::steady_clock> m_startTime; // @TODO - сделать вычисление
 };
 
 template <typename TInterface>
@@ -60,7 +60,7 @@ Monitor<TInterface>::~Monitor()
 template <typename TInterface>
 bool Monitor<TInterface>::Init()
 {
-    // @TODO - создаем pipe для приема заявок на наблюдение
+   t_interface::InitPipe();// @TODO - создаем pipe для приема заявок на наблюдение
     // запускаем все необходимые процессы
     if (!StartAllPrograms())
     {
@@ -69,15 +69,14 @@ bool Monitor<TInterface>::Init()
             boost::log::add_value(boost_logger::additional_data, custom_data) << "error"sv;
         return false;
     }
-    // @TODO - демонизируем процесс монитор
-
+    t_interface::ToDaemon(); // @TODO - демонизируем процесс монитор
     return true;
 }
 
 template <typename TInterface>
 bool Monitor<TInterface>::Exec()
 {
-    while (/*!is_terminated()*/1) // @TODO - подумать на счёт проверки не терминирован ли процесс
+    while (!is_terminated()::m_isTerminate)  // @TODO - подумать на счёт проверки не терминирован ли процесс
     {
         constexpr struct timespec WDT_INSPECT_TO = {3, 0};
         // отслеживаем и выполняем перезапуск завершившихся процессов
