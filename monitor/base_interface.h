@@ -16,6 +16,7 @@ class IBaseInterface
 public:
     boost::signals2::signal<void ()> OnCreateWdtPipe; ///< сигнал создания канала wdt
     static void send_request(const pid_t pid); ///< послать запрос
+    static bool m_isTerminate;
 protected:
     IBaseInterface();
     virtual ~IBaseInterface();

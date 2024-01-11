@@ -22,15 +22,95 @@ static bool wdt_create_pipe([[maybe_unused]] int fd[2])
 
 static pid_t run_program([[maybe_unused]] fs::path path, [[maybe_unused]] const std::vector<std::string>& args)
 {
-    // Запустим программу
-    pid_t pid = fork();
-    if (pid == 0) {
-    // В дочернем процессе запустим указанную программу
-    execvp(path.c_str(), argv);
-    // Если execvp() вернет ошибку, значит запуск программы не удался
-    _exit(1);
+    // подготавливаем аргументы для запуска
+    std::vector<const char *> argv;
+    argv.push_back(path.c_str());
+    for (const std::string& arg : args)
+    {
+        argv.push_back(arg.c_str());
     }
-    return -1;
+    argv.push_back(NULL);
+
+    posix_spawn_file_actions_t fileActions;
+
+    int result = posix_spawn_file_actions_init(&fileActions);
+    if (result != 0)
+    {
+        std::cerr << "posix_spawn_file_actions_init failed" << std::endl;
+        return -1;
+    }
+
+    result = posix_spawn_file_actions_addclose(&fileActions, STDOUT_FILENO);
+    if (result != 0)
+    {
+        std::cerr << "posix_spawn_file_actions_addclose failed" << std::endl;
+        return -1;
+    }
+
+    posix_spawn_file_actions_t* pFileActions = &fileActions;
+
+    posix_spawnattr_t attr;
+
+    result = posix_spawnattr_init(&attr);
+    if (result != 0)
+    {
+        std::cerr << "posix_spawnattr_init failed" << std::endl;
+        return -1;
+    }
+
+    result = posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSIGMASK);
+    if (result != 0)
+    {
+        std::cerr << "posix_spawnattr_setflags failed" << std::endl;
+        return -1;
+    }
+
+    sigset_t mask;
+    sigfillset(&mask);
+    result = posix_spawnattr_setsigmask(&attr, &mask);
+    if (result != 0)
+    {
+        std::cerr << "posix_spawnattr_setsigmask failed" << std::endl;
+        return -1;
+    }
+    posix_spawnattr_t* pAttr = &attr;
+
+    pid_t childPid;
+    result = posix_spawnp(&childPid, path.c_str(), pFileActions, pAttr, const_cast<char**>(&argv[0]),
+        nullptr);
+    if (result != 0)
+    {
+        std::cerr << "posix_spawn failed" << std::endl;
+        return -1;
+    }
+
+    if (pAttr != NULL)
+    {
+        result = posix_spawnattr_destroy(pAttr);
+        if (result != 0)
+        {
+            std::cerr << "posix_spawnattr_destroy failed" << std::endl;
+            return -1;
+        }
+    }
+
+    if (pFileActions != NULL) {
+        result = posix_spawn_file_actions_destroy(pFileActions);
+        if (result != 0)
+        {
+            std::cerr << "posix_spawn_file_actions_destroy failed" << std::endl;
+            return -1;
+        }
+    }
+
+    int status;
+    result = waitpid(childPid, &status, WNOHANG);
+    if (result == -1)
+    {
+        std::cerr << "waitpid failed" << std::endl;
+        return -1;
+    }
+    return childPid;
 }
 
 static pid_t run_program(fs::path path)
@@ -48,6 +128,8 @@ void IBaseInterface::send_request(const pid_t pid)
     // запись pid процесса в пайп
     write(m_wdtPipe[1], &pid, sizeof(pid_t));
 }
+
+bool IBaseInterface::m_isTerminate = false;
 
 /**
  * Конструктор
@@ -208,6 +290,7 @@ void IBaseInterface::Destroy()
     if (m_wdtPipe[1] != -1) {
         close(m_wdtPipe[1]);
     }
+    m_isTerminate = false;
     
     m_init = false;
 }

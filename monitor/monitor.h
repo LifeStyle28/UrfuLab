@@ -57,14 +57,6 @@ Monitor<TInterface>::~Monitor()
     Close();
 }
 
-// добавим проверку, не терминирован ли процесс
-template <typename TInterface>
-bool Monitor<TInterface>::is_terminated(const pid_t pid)
-{
-  int status;
-  return waitpid(pid, &status, WNOHANG) == pid && WIFEXITED(status);
-}
-
 template <typename TInterface>
 bool Monitor<TInterface>::Init()
 {
@@ -93,14 +85,14 @@ bool Monitor<TInterface>::Init()
 template <typename TInterface>
 bool Monitor<TInterface>::Exec()
 {
-    while (!is_terminated(pid) == 1) 
+    while (!t_interface::m_isTerminate) 
     {
         constexpr struct timespec WDT_INSPECT_TO = {3, 0};
         // отслеживаем и выполняем перезапуск завершившихся процессов
         struct timespec rtm = WDT_INSPECT_TO;
         while (nanosleep(&rtm, &rtm) != 0)
         {
-            if (is_terminated() == 0)
+            if (!t_interface::m_isTerminate == 0)
             {
                 break;
             }
@@ -158,44 +150,8 @@ template <typename TInterface>
 pid_t Monitor<TInterface>::StartProgram(t_prog& prog) const
 {
     // напишем запуск программы
-    // создаем процесс
-
-    pid_t pid = fork();
-    if (pid < 0)
-    {
-        return -1;
-    }
-
-    // если родительский процесс, то завершаем его
-
-    if (pid > 0)
-    {
-        return pid;
-    }
-
-    // меняем корневую директорию на "/"
-
-    chdir("/");
-
-    // перенаправляем stdin, stdout и stderr в /dev/null
-
-    int fd_null = open("/dev/null", O_RDWR);
-    if (fd_null < 0)
-    {
-        exit(EXIT_FAILURE);
-    }
-
-    dup2(fd_null, STDIN_FILENO);
-    dup2(fd_null, STDOUT_FILENO);
-    dup2(fd_null, STDERR_FILENO);
-
-    // запускаем программу
-
-    if (execv(prog.path.c_str(), prog.args.data()) < 0)
-    {
-        exit(EXIT_FAILURE);
-    }
-    return 0;
+        prog.pid = t_interface::RunProgram(prog.path, prog.args);
+        return prog.pid;
 }
 
 template <typename TInterface>
@@ -234,7 +190,7 @@ bool Monitor<TInterface>::StartAllPrograms()
         }
     }
 
-    while (!tasks.empty() && !is_terminated(pid)) 
+    while (!tasks.empty() && !t_interface::m_isTerminate) 
     {
         pid_t pid = -1;
         if (t_interface::GetRequestTask(pid))
@@ -276,7 +232,7 @@ void Monitor<TInterface>::ProcessTaskRequests()
     // считываем из очереди pid процессов подписавшихся на наблюдение
     for (size_t i = 0; i < max_count; ++i)
     {
-        if (is_terminated() == 0) 
+        if (!t_interface::m_isTerminate == 0) 
         {
             break;
         }
