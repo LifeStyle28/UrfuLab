@@ -223,9 +223,6 @@ bool IBaseInterface::PreparePrograms()
     m_progs.clear();
     for ([[maybe_unused]] auto& it : predefined_progs)
     {
-        if (argc > 1)
-            program_argument += " " + std::string(argv[1]);
-
         // Инициализируем программу и добавляем ее в m_progs
         t_prog prog;
         prog.pid = 0;
