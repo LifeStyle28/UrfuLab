@@ -1,27 +1,31 @@
 #pragma once
 
 #include "boost_logger.h"
+#include <iostream>
 
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
+#include <csignal>
 
 #include <vector>
 #include <chrono>
+#include <map>
+#include <string>
 
-namespace monitor {
+namespace monitor
+{
 
     using namespace std::literals;
 
     template <typename TInterface>
-    class Monitor : public TInterface {
+    class Monitor : public TInterface
+    {
     public:
         Monitor();
         virtual ~Monitor();
-
-        bool Init();
+        bool Init(); 
         bool Exec(); 
-
     protected:
         typedef TInterface t_interface;
         typedef typename t_interface::t_path t_path;
@@ -29,26 +33,25 @@ namespace monitor {
         typedef typename t_interface::t_tasks t_tasks;
         typedef typename t_interface::t_prog t_prog;
         typedef typename t_interface::t_progs t_progs;
-
     protected:
         void Close(); 
         pid_t StartProgram(t_prog& prog) const;
         bool RestartProgram(const pid_t pid); 
-        bool StartAllPrograms();
-        bool RestartTasks(); 
+        bool StartAllPrograms(); 
+        bool RestartTasks();
         void ProcessTaskRequests();
         void TerminateAllPrograms();
-        bool Terminate(); 
-
+        bool Terminate();
+        std::chrono::seconds WorkingTime();
     private:
-        t_tasks m_tasks;
-        std::chrono::seconds m_workTime; // @TODO 
+        t_tasks m_tasks; 
+        std::chrono::time_point<std::chrono::steady_clock> m_startTime;
     };
 
     template <typename TInterface>
-    Monitor<TInterface>::Monitor() :
-        t_interface()
+  Monitor<TInterface>::Monitor() : t_interface(), m_startTime(std::chrono::steady_clock::now()) 
     {
+
     }
 
     template <typename TInterface>
@@ -58,67 +61,137 @@ namespace monitor {
     }
 
     template <typename TInterface>
-    bool Monitor<TInterface>::Init()
-    {
-        // @TODO
-        if (!StartAllPrograms()) {
-            boost::json::value custom_data{ {"error"s, "Unable to start child processes"s} };
-            BOOST_LOG_TRIVIAL(error) << boost::log::add_value(boost_logger::additional_data, custom_data) << "error"sv;
+    bool Monitor<TInterface>::Init() {
+        if (!t_interface::InitPipe()) {
+            BOOST_LOG_TRIVIAL(error) << "Error: Failed to create a pipe!";
             return false;
         }
-        // @TODO
+
+        BOOST_LOG_TRIVIAL(info) << "Initialization successful.";
+
+        if (!t_interface::ToDaemon()) {
+            BOOST_LOG_TRIVIAL(error) << "Error: Failed to create daemon!";
+            return false;
+        }
+
+        if (!StartAllPrograms()) {
+            BOOST_LOG_TRIVIAL(error) << "Error: Failed to start programs!";
+            return false;
+        }
+       return true;
+    }
+
+    template <typename TInterface>
+    std::chrono::seconds Monitor<TInterface>::WorkingTime() {
+        return std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - m_startTime);
+    }
+
+    template <typename TInterface>
+    bool Monitor<TInterface>::Exec() {
+        while (!t_interface::m_isTerminate) {
+            for (const auto& [pid, time] : m_tasks) {
+                BOOST_LOG_TRIVIAL(info) << "Process status (pid, ping_time): " << pid << ", " << time.count();
+            }
+
+            ProcessTaskRequests();
+
+            constexpr std::chrono::seconds termSecs{ 60 };
+            std::chrono::seconds termPingSecs = WorkingTime() - termSecs;
+            std::vector<pid_t> eraseTasks;
+
+            for (auto& [pid, time] : m_tasks) {
+                if (time < termPingSecs) {
+                    BOOST_LOG_TRIVIAL(info) << "Restarting freeze program with PID: " << pid;
+                    if (t_interface::TerminateProgram(pid)) {
+                        eraseTasks.push_back(pid);
+                    }
+                }
+            }
+
+            for (pid_t erasePid : eraseTasks) {
+                m_tasks.erase(erasePid);
+
+                if (!RestartProgram(erasePid)) {
+                    BOOST_LOG_TRIVIAL(error) << "Error: Failed to restart freeze program with PID: " << erasePid;
+                    return false;
+                }
+            }
+
+            if (!RestartTasks()) {
+                BOOST_LOG_TRIVIAL(error) << "Error: Failed to restart programs!";
+                return false;
+            }
+        }
 
         return true;
+    }
+    template <typename TInterface>
+    std::chrono::seconds Monitor<TInterface>::WorkingTime()
+    {
+        return std::chrono::duration_cast<std::chrono::seconds>
+            (std::chrono::steady_clock::now() - m_startTime);
     }
 
     template <typename TInterface>
     bool Monitor<TInterface>::Exec()
     {
-        while (/*!is_terminated()*/1) // @TODO  
+        while (!t_interface::m_isTerminate)
         {
-            constexpr struct timespec WDT_INSPECT_TO = { 3, 0 };
-            struct timespec rtm = WDT_INSPECT_TO;
-            while (nanosleep(&rtm, &rtm) != 0)
+            for (typename t_tasks::value_type& task : m_tasks)
             {
-                if (/*is_terminated()*/0) {
-                    break;
-                }
-                if (!RestartTasks()) {
-                    return false;
-                }
-                ProcessTaskRequests();
+                boost::json::value custom_data{ {"Process status(pid, ping_time)", task.first, task.second.count()} };
+                BOOST_LOG_TRIVIAL(info) << boost::log::add_value(boost_logger::additional_data, custom_data)
+                    << "Process status!"sv;
             }
 
+            ProcessTaskRequests();
+
             constexpr std::chrono::seconds termSecs{ 60 };
-            std::chrono::seconds termPingSecs = m_workTime - termSecs;
+            std::chrono::seconds termPingSecs = WorkingTime() - termSecs;
             std::vector<pid_t> eraseTasks;
-            for (auto& task : m_tasks)
+            for (typename t_tasks::value_type& task : m_tasks)
             {
                 if (task.second < termPingSecs)
                 {
+                    boost::json::value custom_data{ {"Program PID"s, task.first} };
+                    BOOST_LOG_TRIVIAL(info) << boost::log::add_value(boost_logger::additional_data, custom_data)
+                        << "Restart freeze program!"sv;
                     if (t_interface::TerminateProgram(task.first))
                     {
                         eraseTasks.push_back(task.first);
                     }
                 }
             }
-
+            
             for (pid_t erasePid : eraseTasks)
             {
                 m_tasks.erase(erasePid);
+                if (!RestartProgram(erasePid))
+                {
+                    boost::json::value custom_data{ {"Program PID"s, erasePid} };
+                    BOOST_LOG_TRIVIAL(error) << boost::log::add_value(boost_logger::additional_data, custom_data)
+                        << "Failed restart freeze program!"sv;
+                    return false;
+                }
+            }
+            if (!RestartTasks())
+            {
+                boost::json::value custom_data{ {} };
+                BOOST_LOG_TRIVIAL(error) << boost::log::add_value(boost_logger::additional_data, custom_data)
+                    << "Failed restart programs!"sv;
+                return false;
             }
         }
         return true;
-    }
-
+  }
     template <typename TInterface>
     void Monitor<TInterface>::Close()
     {
         Terminate();
         t_interface::Destroy();
-
-        const std::chrono::seconds to = m_workTime + std::chrono::seconds{ 180 };
-        while (m_workTime < to)
+        const std::chrono::seconds to = WorkingTime() + std::chrono::seconds{ 180 };
+        while (WorkingTime() < to)
         {
             if (t_interface::WaitExitAllPrograms())
             {
@@ -127,56 +200,63 @@ namespace monitor {
             sleep(1);
         }
     }
-
     template <typename TInterface>
     pid_t Monitor<TInterface>::StartProgram(t_prog& prog) const
     {
-        // @TODO
-        return 0;
+        prog.pid = t_interface::RunProgram(prog.path, prog.args);
+        return prog.pid;
     }
 
     template <typename TInterface>
     bool Monitor<TInterface>::RestartProgram(const pid_t pid)
     {
-        for (auto& it : t_interface::Progs())
+        for (t_prog& it : t_interface::Progs())
         {
             if (it.watched && it.pid == pid)
             {
-                return -1 != StartProgram(it);
+                boost::json::value custom_data{ {"Restarted program PID", it.pid} };
+                BOOST_LOG_TRIVIAL(info) << boost::log::add_value(boost_logger::additional_data, custom_data)
+                    << "Restarted program!"sv;
+                return -1 != StartProgram(it);;
             }
         }
         return true;
-    }
-
+ }
     template <typename TInterface>
     bool Monitor<TInterface>::StartAllPrograms()
     {
         if (!t_interface::PreparePrograms())
         {
+            boost::json::value custom_data{ {} };
+            BOOST_LOG_TRIVIAL(error) << boost::log::add_value(boost_logger::additional_data, custom_data)
+                << "Failed to prepare programs!"sv;
             return false;
         }
 
         typedef std::map<pid_t, std::string> t_started_tasks;
         t_started_tasks tasks;
-        for (auto& it : t_interface::Progs())
+        for (t_prog& it : t_interface::Progs())
         {
             const pid_t pid = StartProgram(it);
             if (-1 == pid)
             {
+                boost::json::value custom_data{ {"Program name"s, it.path.string()} };
+                BOOST_LOG_TRIVIAL(error) << boost::log::add_value(boost_logger::additional_data, custom_data)
+                    << "Failed to start program!"sv;
                 return false;
             }
             if (it.watched)
-            {
+                 {
                 tasks[pid] = it.path;
             }
         }
 
-        while (!tasks.empty() /*&& !is_terminated()*/) // @TODO
+        while (!tasks.empty() && !t_interface::m_isTerminate)
         {
             pid_t pid = -1;
             if (t_interface::GetRequestTask(pid))
             {
-                auto it = tasks.find(pid);
+                t_started_tasks::iterator it = tasks.find(pid);
                 if (it != tasks.end())
                 {
                     tasks.erase(it);
@@ -186,7 +266,6 @@ namespace monitor {
         }
         return true;
     }
-
     template <typename TInterface>
     bool Monitor<TInterface>::RestartTasks()
     {
@@ -197,19 +276,17 @@ namespace monitor {
             return RestartProgram(pid);
         }
         else if (-1 == pid)
-        {
+                  {
         }
-
         return true;
     }
-
     template <typename TInterface>
     void Monitor<TInterface>::ProcessTaskRequests()
     {
-        constexpr size_t max_count = 1000;
+        constexpr size_t max_count = 1000; 
         for (size_t i = 0; i < max_count; ++i)
         {
-            if (/*is_terminated()*/0) // @TODO - 
+            if (t_interface::m_isTerminate)
             {
                 break;
             }
@@ -228,23 +305,34 @@ namespace monitor {
             }
         }
     }
-
     template <typename TInterface>
     void Monitor<TInterface>::TerminateAllPrograms()
     {
-        t_interface::TerminateProgram(0);
-        for (const auto& it : t_interface::Progs())
+        for (const t_prog& it : t_interface::Progs())
         {
             t_interface::TerminateProgram(it.pid);
+            boost::json::value custom_data{ {"Terminated program"s, it.pid} };
+            BOOST_LOG_TRIVIAL(info) << boost::log::add_value(boost_logger::additional_data, custom_data)
+                << "Terminated program!"sv;
         }
     }
 
-    template <typename TInterface>
+ template <typename TInterface>
     bool Monitor<TInterface>::Terminate()
     {
         constexpr std::chrono::seconds STOP_WAIT_TIME_MAX{ 120 };
-        const std::chrono::seconds beg = m_workTime;
-        while (m_workTime - beg < STOP_WAIT_TIME_MAX)
-        {
+        const std::chrono::seconds beg = WorkingTime();
+
+        while (WorkingTime() - beg < STOP_WAIT_TIME_MAX)
+                   {
             TerminateAllPrograms();
             sleep(1);
+            if (t_interface::WaitExitAllPrograms())
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+}
